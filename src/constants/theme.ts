@@ -20,6 +20,13 @@ export const Colors = {
     tint: '#B84F33',
     tintText: '#FFFFFF',
     danger: '#B42340',
+    /** 사진 위에 얹는 반투명 검정(삭제 버튼 등)과 그 위 글자색 */
+    overlay: '#00000099',
+    onOverlay: '#FFFFFF',
+    /** 카메라 화면 배경. 카메라 앱은 라이트 모드여도 검정 배경이 기본이다. */
+    cameraBackground: '#000000',
+    /** 검정 카메라 배경 위의 강조색 (라이트 모드의 진한 tint는 검정 위에서 잘 안 보여서 따로 둔다) */
+    cameraAccent: '#F2A28B',
     /** 기분 1~5 색. 밝은 회색 트랙 위에서도 구분되도록(3:1 이상) 진하게 잡았다. */
     mood: { 1: '#5A6E8C', 2: '#737F91', 3: '#957A4E', 4: '#A86428', 5: '#B84F33' },
   },
@@ -32,6 +39,10 @@ export const Colors = {
     tint: '#F2A28B',
     tintText: '#1C1C1E',
     danger: '#FF6B6B',
+    overlay: '#00000099',
+    onOverlay: '#FFFFFF',
+    cameraBackground: '#000000',
+    cameraAccent: '#F2A28B',
     /** 어두운 배경에서는 밝은 파스텔 톤이 잘 보인다. */
     mood: { 1: '#7A8CA5', 2: '#9AA7B8', 3: '#C9B79C', 4: '#F2B880', 5: '#E07A5F' },
   },

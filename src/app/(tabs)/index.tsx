@@ -6,11 +6,20 @@ import { FlatList, Pressable, Text, View } from 'react-native';
 import { DiaryCard } from '@/components/diary-card';
 import { Screen } from '@/components/screen';
 import { AppText } from '@/components/ui/app-text';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { TextField } from '@/components/ui/text-field';
+import { PERIODS } from '@/constants/periods';
 import { Layout, Radius, Spacing } from '@/constants/theme';
-import { getAllEntries, searchEntries } from '@/db/diary-repository';
+import { listEntries } from '@/db/diary-repository';
 import { makeStyles } from '@/styles/make-styles';
-import type { DiaryEntry } from '@/types/diary';
+import type { DiaryEntry, DiaryPeriod } from '@/types/diary';
+
+/** 목록 필터: 전체 + 일기 종류들 */
+type ListFilter = 'all' | DiaryPeriod;
+const FILTER_OPTIONS: { value: ListFilter; label: string }[] = [
+  { value: 'all', label: '전체' },
+  ...PERIODS.map((p) => ({ value: p.period, label: p.label })),
+];
 
 /**
  * 일기 목록 화면 (첫 번째 탭).
@@ -18,7 +27,7 @@ import type { DiaryEntry } from '@/types/diary';
  * 데이터 흐름
  * 1. 화면에 들어올 때마다(useFocusEffect) DB에서 목록을 읽어 entries 상태에 넣는다.
  *    → 작성·수정 화면에서 돌아오면 자동으로 새 목록이 보인다.
- * 2. 검색어(keyword)가 바뀌면 다시 조회한다.
+ * 2. 검색어(keyword)나 종류 필터(filter)가 바뀌면 다시 조회한다.
  * 3. entries 상태가 바뀌면 React가 FlatList를 다시 그린다.
  */
 export default function DiaryListScreen() {
@@ -26,18 +35,19 @@ export default function DiaryListScreen() {
   const styles = useStyles();
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [keyword, setKeyword] = useState('');
+  const [filter, setFilter] = useState<ListFilter>('all');
 
   useFocusEffect(
     useCallback(() => {
       let active = true; // 화면을 떠난 뒤 늦게 도착한 결과로 상태를 바꾸지 않기 위한 플래그
       const trimmed = keyword.trim();
-      (trimmed ? searchEntries(db, trimmed) : getAllEntries(db)).then((rows) => {
+      listEntries(db, { keyword: trimmed || undefined, period: filter === 'all' ? undefined : filter }).then((rows) => {
         if (active) setEntries(rows);
       });
       return () => {
         active = false;
       };
-    }, [db, keyword])
+    }, [db, keyword, filter])
   );
 
   const writeButton = (
@@ -62,6 +72,7 @@ export default function DiaryListScreen() {
           clearButtonMode="while-editing"
           returnKeyType="search"
         />
+        <SegmentedControl options={FILTER_OPTIONS} value={filter} onChange={setFilter} />
       </View>
 
       <FlatList
@@ -79,7 +90,7 @@ export default function DiaryListScreen() {
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>📔</Text>
             <AppText tone="secondary" style={styles.emptyText}>
-              {keyword.trim() ? '검색 결과가 없어요.' : '아직 작성한 일기가 없어요.\n오른쪽 위 "쓰기"를 눌러 시작해 보세요.'}
+              {keyword.trim() || filter !== 'all' ? '조건에 맞는 일기가 없어요.' : '아직 작성한 일기가 없어요.\n오른쪽 위 "쓰기"를 눌러 시작해 보세요.'}
             </AppText>
           </View>
         }
@@ -99,7 +110,7 @@ const useStyles = makeStyles((theme) => ({
     paddingVertical: Spacing.sm,
     borderRadius: Radius.lg,
   },
-  searchWrap: { paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing.sm },
+  searchWrap: { paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing.sm, gap: Spacing.sm },
   list: { padding: Layout.screenPadding, paddingBottom: Layout.tabBarInset, flexGrow: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
   emptyIcon: { fontSize: 48, marginBottom: Spacing.md },

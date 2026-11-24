@@ -5,9 +5,16 @@ React Native(Expo) + TypeScript로 만든 무료 다이어리 앱입니다.
 
 ## 기능
 
-- 일기 작성·수정·삭제 (날짜, 기분 5단계, 제목, 내용, 사진 1장)
-- 일기 목록 + 제목/내용 검색
-- 월간 캘린더 (날짜별 기분 이모지 표시, 날짜 눌러서 그날 일기 보기·쓰기)
+- 일기 작성·수정·삭제 (날짜, 기분 5단계, 제목, 내용, **사진 최대 10장**)
+- **일기 종류 3가지: 하루 일기 / 주간 회고 / 월간 회고**
+  - 주간·월간 회고 상세 화면에는 그 기간에 쓴 하루 일기가 함께 모여 보인다
+- 일기 목록 + 제목/내용 검색 + 종류 필터(전체/하루/주간/월간)
+- 월간 캘린더 (날짜별 기분 이모지 표시, 날짜 눌러서 그날 일기·그 주/그 달 회고 보기·쓰기)
+- **카메라**: 앞/뒤 전환, 플래시, 3×3 격자, 셀프 타이머(3·10초), 줌, 셀카 좌우 반전
+- **사진 필터 편집** (카메라로 찍은 사진·앨범 사진 모두)
+  - 필터 14종(따뜻함·필름·빈티지·크림·청량·노을·몽환·흑백·누아르 등) + 강도 조절
+  - 밝기·대비·채도·색온도 조정, 비네팅, 필름 카메라 날짜 도장
+  - 사진을 누르고 있으면 원본과 비교
 - 앱 잠금 (Face ID / 지문 / 기기 암호)
 - 기분 통계
 - 라이트/다크 모드 자동 적용
@@ -20,7 +27,9 @@ React Native(Expo) + TypeScript로 만든 무료 다이어리 앱입니다.
 | 프레임워크 | Expo SDK 58 (React Native 0.88, React 19) |
 | 화면 이동 | Expo Router (파일 기반 라우팅) + Native Tabs |
 | 로컬 DB | expo-sqlite |
-| 사진 | expo-image-picker, expo-file-system, expo-image |
+| 사진 | expo-image-picker, expo-file-system, expo-image, expo-image-manipulator |
+| 카메라 | expo-camera |
+| 필터(GPU 그래픽) | @shopify/react-native-skia |
 | 잠금 | expo-local-authentication |
 
 ## 실행 방법
@@ -43,7 +52,9 @@ npx expo start
   # 또는
   npx eas-cli@latest build --profile development --platform ios
   ```
-- 나머지 기능(작성·목록·캘린더·사진·SQLite)은 Expo Go에서 모두 확인할 수 있습니다.
+- 나머지 기능(작성·목록·캘린더·사진·카메라·필터·SQLite)은 Expo Go에서 모두 확인할 수 있습니다.
+  (expo-camera, Skia, expo-image-manipulator는 Expo Go에 들어 있다.)
+- **카메라는 시뮬레이터에서 동작하지 않습니다.** 실제 폰에서 확인하세요.
 
 ## 폴더 구조
 
@@ -56,8 +67,10 @@ src/
 │   │   ├── index.tsx         # 일기 목록 + 검색
 │   │   ├── calendar.tsx      # 캘린더
 │   │   └── settings.tsx      # 잠금 설정 + 기분 통계
-│   ├── entry/[id].tsx        # 일기 상세 (/entry/3 → id = 3)
-│   └── write.tsx             # 작성·수정 모달 (/write, /write?id=3, /write?date=2026-11-22)
+│   ├── entry/[id].tsx        # 일기 상세 (/entry/3 → id = 3). 주간/월간이면 기간 내 하루 일기도 표시
+│   ├── write.tsx             # 작성·수정 모달 (/write, /write?id=3, /write?period=week&date=2026-11-22)
+│   ├── camera.tsx            # 카메라 (찍으면 photo-filter로 교체 이동)
+│   └── photo-filter.tsx      # 필터·조정·효과 편집 → 결과를 photo-inbox로 작성 화면에 전달
 │
 ├── db/                       # 데이터 계층 — SQL은 전부 여기에만
 │   ├── migrations.ts         # 테이블 생성·스키마 버전 관리
@@ -65,7 +78,8 @@ src/
 │   └── settings-repository.ts# 설정 key-value 저장
 │
 ├── services/                 # 기기 기능 래퍼
-│   ├── photo-storage.ts      # 사진 선택 → 앱 폴더로 복사 → 삭제
+│   ├── photo-storage.ts      # 사진 여러 장 선택, 편집용 정리(회전·축소), 앱 폴더로 복사, 삭제
+│   ├── photo-inbox.ts        # 카메라·필터 화면 → 작성 화면으로 사진을 넘겨주는 작은 큐
 │   ├── biometric.ts          # Face ID / 지문 인증
 │   └── lock-control.ts       # 사진 고르는 동안 재잠금 일시 중지
 │
@@ -78,12 +92,16 @@ src/
 │   │   ├── section-label.tsx #   작은 섹션 제목
 │   │   ├── arrow-nav.tsx     #   ‹ 라벨 › 이동 막대 (월 이동·날짜 이동)
 │   │   ├── header-text-button.tsx # 헤더의 "취소"/"저장"
-│   │   ├── photo.tsx         #   사진 (full / thumb)
+│   │   ├── photo.tsx         #   사진 (full / tile / thumb)
+│   │   ├── segmented-control.tsx # [하루|주간|월간] 같은 선택 탭 (제네릭)
+│   │   ├── slider.tsx        #   가로 슬라이더 (필터 강도·조정·줌)
 │   │   └── state-view.tsx    #   LoadingView, MessageView
 │   ├── lock-gate.tsx         # 앱 잠금 화면 / 백그라운드 복귀 시 재잠금
 │   ├── screen.tsx            # 탭 화면 공통 틀 (SafeArea + 큰 제목)
 │   ├── diary-card.tsx        # 목록의 일기 카드
 │   ├── mood-picker.tsx       # 기분 5단계 선택
+│   ├── photo-list-editor.tsx # 작성 화면의 사진 칸 (가로 목록 + 앨범/카메라 버튼)
+│   ├── filtered-photo.tsx    # Skia로 필터 적용한 사진 그리기 (미리보기·저장 공용)
 │   └── calendar-grid.tsx     # 월간 달력 그리드
 │
 ├── styles/                   # ★ 스타일 공통 모듈
@@ -92,25 +110,40 @@ src/
 │   └── color.ts              # withAlpha(색, 투명도)
 │
 ├── types/diary.ts            # DiaryEntry 등 타입 정의
-├── constants/                # 디자인 토큰(theme.ts: 색·간격·글자·레이아웃), 기분 정의(moods.ts)
+├── constants/                # 디자인 토큰(theme.ts), 기분(moods.ts), 일기 종류 문구(periods.ts), 필터 정의(filters.ts)
 ├── hooks/                    # useTheme, useColorScheme
-└── utils/date.ts             # 'YYYY-MM-DD' 날짜 유틸
+└── utils/
+    ├── date.ts               # 'YYYY-MM-DD' 날짜 유틸 + 기간(주·월) 계산
+    └── color-matrix.ts       # 필터의 정체: 색 변환 행렬 계산 (밝기·대비·채도·세피아 ...)
 ```
 
 ## DB 스키마
 
+현재 스키마 버전: **2** (`PRAGMA user_version`)
+
 ```sql
 CREATE TABLE entries (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  entry_date  TEXT    NOT NULL,      -- 'YYYY-MM-DD'
+  entry_date  TEXT    NOT NULL,      -- 'YYYY-MM-DD' (주간 = 그 주 일요일, 월간 = 그 달 1일)
   mood        INTEGER NOT NULL,      -- 1(최악) ~ 5(최고)
   title       TEXT    NOT NULL DEFAULT '',
   content     TEXT    NOT NULL DEFAULT '',
-  photo_uri   TEXT,                  -- 앱 문서 폴더에 복사한 사진 경로
+  photo_uri   TEXT,                  -- v1 사진 컬럼. v2부터 안 씀 (entry_photos로 옮김)
   created_at  TEXT    NOT NULL,
-  updated_at  TEXT    NOT NULL
+  updated_at  TEXT    NOT NULL,
+  period      TEXT    NOT NULL DEFAULT 'day'   -- v2: 'day' | 'week' | 'month'
 );
-CREATE INDEX idx_entries_date ON entries (entry_date);  -- 캘린더 월 범위 조회용
+CREATE INDEX idx_entries_date ON entries (entry_date);
+CREATE INDEX idx_entries_period_date ON entries (period, entry_date);  -- v2: 캘린더·회고 조회용
+
+-- v2: 일기 1건 : 사진 N장
+CREATE TABLE entry_photos (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_id    INTEGER NOT NULL REFERENCES entries (id),
+  uri         TEXT    NOT NULL,      -- 앱 문서 폴더(photos/)에 복사한 사진 경로
+  sort_order  INTEGER NOT NULL DEFAULT 0   -- 0번이 대표 사진(목록 썸네일)
+);
+CREATE INDEX idx_entry_photos_entry ON entry_photos (entry_id, sort_order);
 
 CREATE TABLE settings (
   key   TEXT PRIMARY KEY NOT NULL,   -- 예: 'lock_enabled'
@@ -164,6 +197,9 @@ function Example() {
 | `useState` | JSP의 Model 값. 바뀌면 화면이 자동으로 다시 그려짐 |
 | `useFocusEffect` | 화면에 들어올 때마다 실행되는 조회 로직 (매 요청 시 Controller가 조회하는 것과 비슷) |
 | `src/services/` | `@Service` (기기 기능 래핑) |
+| `db.withTransactionAsync(...)` | `@Transactional` (일기 + 사진 저장을 한 트랜잭션으로) |
+| `listEntries`의 조건 조립 | MyBatis 동적 SQL `<where><if>` |
+| `services/photo-inbox.ts` | 팝업 창 → 부모 창으로 값 돌려주기 (작은 메모리 큐) |
 
 ## 코드 분석 추천 순서
 
@@ -175,6 +211,8 @@ function Example() {
 6. `src/components/lock-gate.tsx` — `AppState`로 앱 상태 변화를 감지하는 방법
 7. `src/components/calendar-grid.tsx` — 라이브러리 없이 달력 계산하기
 8. `src/constants/theme.ts` → `src/styles/make-styles.ts` → `src/components/ui/` — 스타일을 모듈로 나누는 방법
+9. `src/utils/color-matrix.ts` → `src/constants/filters.ts` → `src/components/filtered-photo.tsx` → `src/app/photo-filter.tsx` — 필터가 숫자 20개짜리 행렬로 만들어지는 과정
+10. `src/app/camera.tsx` — 권한 요청, 카메라 ref로 촬영, 타이머
 
 ## 검사 명령어
 

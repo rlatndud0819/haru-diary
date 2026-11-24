@@ -1,36 +1,42 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
 
 import { MoodPicker } from '@/components/mood-picker';
+import { PhotoListEditor } from '@/components/photo-list-editor';
 import { ArrowNav } from '@/components/ui/arrow-nav';
 import { Button } from '@/components/ui/button';
 import { HeaderTextButton } from '@/components/ui/header-text-button';
-import { Photo } from '@/components/ui/photo';
 import { SectionLabel } from '@/components/ui/section-label';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { LoadingView } from '@/components/ui/state-view';
 import { TextField } from '@/components/ui/text-field';
 import { DEFAULT_MOOD } from '@/constants/moods';
+import { getPeriod, PERIODS } from '@/constants/periods';
 import { Spacing } from '@/constants/theme';
 import { createEntry, getEntryById, updateEntry } from '@/db/diary-repository';
-import { deletePhoto, isStoredPhoto, pickPhoto, savePhotoToAppStorage } from '@/services/photo-storage';
+import { takePendingPhotos } from '@/services/photo-inbox';
+import { deletePhoto, isStoredPhoto, pickPhotos, savePhotoToAppStorage } from '@/services/photo-storage';
 import { CommonStyles } from '@/styles/common';
-import type { MoodLevel } from '@/types/diary';
-import { addDays, formatKoreanDate, todayKey } from '@/utils/date';
+import { type DiaryPeriod, MAX_PHOTOS, type MoodLevel } from '@/types/diary';
+import { formatPeriod, periodStart, shiftPeriod, todayKey } from '@/utils/date';
+
+const PERIOD_OPTIONS = PERIODS.map((p) => ({ value: p.period, label: p.label }));
 
 /**
  * 일기 작성·수정 화면 (모달).
  *
- * 하나의 화면을 두 용도로 쓴다.
- * - /write            → 새 일기 (오늘 날짜)
- * - /write?date=...   → 새 일기 (캘린더에서 고른 날짜)
- * - /write?id=3       → 3번 일기 수정 (기존 값을 불러와 채움)
+ * 하나의 화면을 여러 용도로 쓴다.
+ * - /write                    → 새 하루 일기 (오늘)
+ * - /write?date=...           → 새 하루 일기 (캘린더에서 고른 날짜)
+ * - /write?period=week&date=… → 새 주간/월간 회고
+ * - /write?id=3               → 3번 일기 수정 (기존 값을 불러와 채움)
  *
- * 입력값(날짜·기분·제목·내용·사진)은 각각 useState로 관리하고, 저장 버튼을 누르면 DB에 반영한다.
+ * 입력값은 각각 useState로 관리하고, 저장 버튼을 누르면 DB에 반영한다.
  */
 export default function WriteScreen() {
-  const params = useLocalSearchParams<{ id?: string; date?: string }>();
+  const params = useLocalSearchParams<{ id?: string; date?: string; period?: DiaryPeriod }>();
   const editId = params.id ? Number(params.id) : null;
   const isEdit = editId !== null;
 
@@ -38,33 +44,66 @@ export default function WriteScreen() {
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
-  const [entryDate, setEntryDate] = useState(params.date ?? todayKey());
+  const [period, setPeriod] = useState<DiaryPeriod>(params.period ?? 'day');
+  // entryDate는 항상 "기간의 시작일"로 맞춰 둔다 (주간 = 일요일, 월간 = 1일)
+  const [entryDate, setEntryDate] = useState(periodStart(params.period ?? 'day', params.date ?? todayKey()));
   const [mood, setMood] = useState<MoodLevel>(DEFAULT_MOOD);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  /** 수정 시작 시점의 사진. 저장할 때 사진이 바뀌었으면 예전 파일을 지우기 위해 기억해 둔다. */
-  const [originalPhotoUri, setOriginalPhotoUri] = useState<string | null>(null);
+  const [photoUris, setPhotoUris] = useState<string[]>([]);
+  /** 수정 시작 시점의 사진들. 저장할 때 빠진 사진 파일을 지우기 위해 기억해 둔다. */
+  const [originalPhotoUris, setOriginalPhotoUris] = useState<string[]>([]);
 
   // 수정 모드면 기존 일기를 불러와 입력칸을 채운다.
   useEffect(() => {
+    takePendingPhotos(); // 이전에 남아 있던 결과가 섞이지 않도록 비우고 시작
     if (editId === null) return;
     getEntryById(db, editId).then((entry) => {
       if (entry) {
+        setPeriod(entry.period);
         setEntryDate(entry.entryDate);
         setMood(entry.mood);
         setTitle(entry.title);
         setContent(entry.content);
-        setPhotoUri(entry.photoUri);
-        setOriginalPhotoUri(entry.photoUri);
+        setPhotoUris(entry.photoUris);
+        setOriginalPhotoUris(entry.photoUris);
       }
       setLoading(false);
     });
   }, [db, editId]);
 
-  async function handlePickPhoto() {
-    const uri = await pickPhoto();
-    if (uri) setPhotoUri(uri);
+  // 카메라·필터 화면에서 돌아오면, 그 화면이 넣어 둔 사진을 꺼내 반영한다. (services/photo-inbox.ts 참고)
+  useFocusEffect(
+    useCallback(() => {
+      const results = takePendingPhotos();
+      if (results.length === 0) return;
+      setPhotoUris((prev) => {
+        const next = [...prev];
+        for (const r of results) {
+          if (r.replaceIndex !== undefined && r.replaceIndex < next.length) next[r.replaceIndex] = r.uri;
+          else if (next.length < MAX_PHOTOS) next.push(r.uri);
+        }
+        return next;
+      });
+    }, [])
+  );
+
+  function handleChangePeriod(next: DiaryPeriod) {
+    setPeriod(next);
+    setEntryDate(periodStart(next, entryDate));
+  }
+
+  async function handlePickFromAlbum() {
+    const uris = await pickPhotos(MAX_PHOTOS - photoUris.length);
+    if (uris.length) setPhotoUris((prev) => [...prev, ...uris].slice(0, MAX_PHOTOS));
+  }
+
+  function handleEditPhoto(index: number) {
+    router.push({ pathname: '/photo-filter', params: { uri: photoUris[index], replaceIndex: String(index) } });
+  }
+
+  function handleRemovePhoto(index: number) {
+    setPhotoUris((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSave() {
@@ -73,23 +112,28 @@ export default function WriteScreen() {
       return;
     }
     setSaving(true);
-    /** 이번 저장에서 새로 복사한 사진. DB 저장이 실패하면 지워서 고아 파일이 남지 않게 한다. */
-    let copiedPhoto: string | null = null;
+    /** 이번 저장에서 새로 복사한 사진들. DB 저장이 실패하면 지워서 고아 파일이 남지 않게 한다. */
+    const copied: string[] = [];
     try {
-      // 새로 고른 사진(임시 경로)만 앱 저장소로 복사한다. 기존 사진이면 그대로 둔다.
-      let finalPhoto = photoUri;
-      if (photoUri && !isStoredPhoto(photoUri)) {
-        finalPhoto = await savePhotoToAppStorage(photoUri);
-        copiedPhoto = finalPhoto;
+      // 새로 고르거나 필터를 적용한 사진(임시 경로)만 앱 저장소로 복사한다. 기존 사진은 그대로 둔다.
+      const finalUris: string[] = [];
+      for (const uri of photoUris) {
+        if (isStoredPhoto(uri)) {
+          finalUris.push(uri);
+        } else {
+          const saved = await savePhotoToAppStorage(uri);
+          copied.push(saved);
+          finalUris.push(saved);
+        }
       }
 
-      const input = { entryDate, mood, title: title.trim(), content: content.trim(), photoUri: finalPhoto };
+      const input = { period, entryDate, mood, title: title.trim(), content: content.trim(), photoUris: finalUris };
 
       if (isEdit) {
         await updateEntry(db, editId, input);
-        // 사진을 바꾸거나 뺐으면 예전 사진 파일 삭제
-        if (originalPhotoUri && originalPhotoUri !== finalPhoto) {
-          deletePhoto(originalPhotoUri);
+        // 빠지거나 필터로 교체된 예전 사진 파일 삭제
+        for (const old of originalPhotoUris) {
+          if (!finalUris.includes(old)) deletePhoto(old);
         }
       } else {
         await createEntry(db, input);
@@ -98,7 +142,7 @@ export default function WriteScreen() {
     } catch (e) {
       console.error(e);
       // Spring의 @Transactional 롤백처럼 DB와 파일을 묶어 주진 않으므로, 실패 시 파일은 직접 정리한다.
-      deletePhoto(copiedPhoto);
+      copied.forEach(deletePhoto);
       Alert.alert('저장 실패', '일기를 저장하지 못했어요. 다시 시도해 주세요.');
     } finally {
       setSaving(false);
@@ -107,7 +151,9 @@ export default function WriteScreen() {
 
   if (loading) return <LoadingView />;
 
-  const isFuture = entryDate >= todayKey(); // 문자열 비교로 날짜 비교 가능 ('YYYY-MM-DD' 형식 덕분)
+  const info = getPeriod(period);
+  // 다음 기간의 시작일이 오늘보다 뒤면 미래이므로 막는다 ('YYYY-MM-DD'는 문자열 비교로 날짜 비교가 된다)
+  const nextDisabled = shiftPeriod(period, entryDate, 1) > todayKey();
 
   return (
     <>
@@ -120,42 +166,37 @@ export default function WriteScreen() {
       />
       <KeyboardAvoidingView style={CommonStyles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={CommonStyles.stackScrollContent} keyboardShouldPersistTaps="handled">
-          {/* 날짜: 좌우 화살표로 하루씩 이동 (미래 날짜는 막음) */}
+          {/* 일기 종류: 하루 / 주간 / 월간 */}
+          <SegmentedControl options={PERIOD_OPTIONS} value={period} onChange={handleChangePeriod} />
+
+          {/* 날짜(기간): 좌우 화살표로 하루·한 주·한 달씩 이동 (미래는 막음) */}
           <ArrowNav
-            label={formatKoreanDate(entryDate)}
-            onPrev={() => setEntryDate(addDays(entryDate, -1))}
-            onNext={() => setEntryDate(addDays(entryDate, 1))}
-            prevLabel="전날"
-            nextLabel="다음날"
-            nextDisabled={isFuture}
+            label={formatPeriod(period, entryDate)}
+            onPrev={() => setEntryDate(shiftPeriod(period, entryDate, -1))}
+            onNext={() => setEntryDate(shiftPeriod(period, entryDate, 1))}
+            prevLabel={info.prevLabel}
+            nextLabel={info.nextLabel}
+            nextDisabled={nextDisabled}
           />
 
-          <SectionLabel>오늘의 기분</SectionLabel>
+          <SectionLabel>{info.moodLabel}</SectionLabel>
           <MoodPicker value={mood} onChange={setMood} />
 
           <SectionLabel>제목</SectionLabel>
-          <TextField value={title} onChangeText={setTitle} placeholder="오늘을 한 줄로 표현하면?" maxLength={60} />
+          <TextField value={title} onChangeText={setTitle} placeholder={info.titlePlaceholder} maxLength={60} />
 
           <SectionLabel>내용</SectionLabel>
-          <TextField
-            value={content}
-            onChangeText={setContent}
-            placeholder="오늘 있었던 일, 느낀 점을 자유롭게 적어 보세요."
-            multiline
-          />
+          <TextField value={content} onChangeText={setContent} placeholder={info.contentPlaceholder} multiline />
 
           <SectionLabel>사진</SectionLabel>
-          {photoUri ? (
-            <View style={styles.photoBlock}>
-              <Photo uri={photoUri} />
-              <View style={[CommonStyles.row, styles.photoActions]}>
-                <Button label="사진 바꾸기" variant="outline" onPress={handlePickPhoto} style={CommonStyles.flex1} />
-                <Button label="사진 빼기" variant="danger" onPress={() => setPhotoUri(null)} style={CommonStyles.flex1} />
-              </View>
-            </View>
-          ) : (
-            <Button label="＋ 사진 추가" variant="outline" onPress={handlePickPhoto} />
-          )}
+          <PhotoListEditor
+            uris={photoUris}
+            max={MAX_PHOTOS}
+            onPickFromAlbum={handlePickFromAlbum}
+            onOpenCamera={() => router.push('/camera')}
+            onEdit={handleEditPhoto}
+            onRemove={handleRemovePhoto}
+          />
 
           <Button
             label={saving ? '저장 중…' : '저장하기'}
@@ -170,7 +211,5 @@ export default function WriteScreen() {
 }
 
 const styles = StyleSheet.create({
-  photoBlock: { gap: Spacing.sm },
-  photoActions: { gap: Spacing.sm },
   saveButton: { marginTop: Spacing.xl },
 });

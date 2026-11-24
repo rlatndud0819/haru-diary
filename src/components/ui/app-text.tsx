@@ -3,7 +3,7 @@ import { Text, type TextProps } from 'react-native';
 import { type ThemeColors, Typography, type TypographyVariant } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type TextTone = 'primary' | 'secondary' | 'tint' | 'danger' | 'onTint';
+export type TextTone = 'primary' | 'secondary' | 'tint' | 'danger' | 'onTint' | 'onOverlay' | 'cameraAccent';
 
 /** 단일 색 값인 테마 키만 (mood 같은 묶음 제외) */
 type ColorKey = Exclude<keyof ThemeColors, 'mood'>;
@@ -14,6 +14,8 @@ const toneToColor: Record<TextTone, ColorKey> = {
   tint: 'tint',
   danger: 'danger',
   onTint: 'tintText',
+  onOverlay: 'onOverlay',
+  cameraAccent: 'cameraAccent',
 };
 
 type Props = TextProps & {
