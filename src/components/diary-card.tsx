@@ -1,5 +1,6 @@
 import { Text, View } from 'react-native';
 
+import { EmotionTagList } from '@/components/emotion-tag-list';
 import { AppText } from '@/components/ui/app-text';
 import { Card } from '@/components/ui/card';
 import { Photo } from '@/components/ui/photo';
@@ -51,6 +52,7 @@ export function DiaryCard({ entry, onPress }: Props) {
             {entry.content}
           </AppText>
         ) : null}
+        <EmotionTagList emotions={entry.emotions.slice(0, 2)} tags={entry.tags.slice(0, 2)} small />
       </View>
 
       {entry.photoUris.length > 0 ? (

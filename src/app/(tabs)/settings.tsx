@@ -7,10 +7,12 @@ import { Alert, ScrollView, Switch, Text, View } from 'react-native';
 import { Screen } from '@/components/screen';
 import { AppText } from '@/components/ui/app-text';
 import { Card } from '@/components/ui/card';
+import { Chip } from '@/components/ui/chip';
 import { SectionLabel } from '@/components/ui/section-label';
+import { getEmotion } from '@/constants/emotions';
 import { MOODS } from '@/constants/moods';
 import { Spacing } from '@/constants/theme';
-import { getMoodStats } from '@/db/diary-repository';
+import { getEmotionCounts, getMoodStats, getTagMoodImpact, type TagMoodImpact } from '@/db/diary-repository';
 import { isLockEnabled, setLockEnabled } from '@/db/settings-repository';
 import { useTheme } from '@/hooks/use-theme';
 import { authenticate, checkBiometricAvailable } from '@/services/biometric';
@@ -23,7 +25,7 @@ type MoodStats = { total: number; byMood: Record<MoodLevel, number> };
 /**
  * 설정 화면 (세 번째 탭).
  * - 앱 잠금 켜기/끄기 (켜거나 끌 때 한 번 인증해서 본인 확인)
- * - 기분 통계
+ * - 기분 통계, 자주 느낀 감정, 기분에 영향을 준 이유 태그
  */
 export default function SettingsScreen() {
   const db = useSQLiteContext();
@@ -31,11 +33,15 @@ export default function SettingsScreen() {
   const styles = useStyles();
   const [lockOn, setLockOn] = useState(false);
   const [stats, setStats] = useState<MoodStats>({ total: 0, byMood: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+  const [emotionCounts, setEmotionCounts] = useState<{ emotion: string; count: number }[]>([]);
+  const [impacts, setImpacts] = useState<TagMoodImpact[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       isLockEnabled(db).then(setLockOn);
       getMoodStats(db).then(setStats);
+      getEmotionCounts(db).then(setEmotionCounts);
+      getTagMoodImpact(db).then(setImpacts);
     }, [db])
   );
 
@@ -90,6 +96,58 @@ export default function SettingsScreen() {
           })}
         </Card>
 
+        <SectionLabel>자주 느낀 감정</SectionLabel>
+        <Card style={styles.statsCard}>
+          {emotionCounts.length === 0 ? (
+            <AppText variant="bodySmall" tone="secondary">
+              일기를 쓸 때 감정 단어를 고르면 여기에 모여요.
+            </AppText>
+          ) : (
+            <View style={styles.chips}>
+              {emotionCounts.slice(0, 8).map(({ emotion, count }) => {
+                const e = getEmotion(emotion);
+                if (!e) return null;
+                return (
+                  <Chip
+                    key={emotion}
+                    label={e.label}
+                    count={count}
+                    selected
+                    color={e.tone === 'positive' ? theme.mood[5] : theme.mood[1]}
+                  />
+                );
+              })}
+            </View>
+          )}
+        </Card>
+
+        <SectionLabel>기분에 영향을 준 것</SectionLabel>
+        <Card style={styles.statsCard}>
+          {impacts.length === 0 ? (
+            <AppText variant="bodySmall" tone="secondary">
+              같은 태그를 2번 이상 붙이면, 그 태그가 있는 날의 기분이 평소와 어떻게 달랐는지 보여 드려요.
+            </AppText>
+          ) : (
+            <>
+              <AppText variant="caption" tone="secondary" style={styles.impactNote}>
+                하루 일기 기준, 태그가 있는 날의 평균 기분과 전체 평균의 차이
+              </AppText>
+              {impacts.slice(0, 6).map((it) => (
+                <View key={it.tagId} style={[CommonStyles.rowBetween, styles.impactRow]}>
+                  <AppText variant="subtitle">#{it.name}</AppText>
+                  <AppText variant="bodySmall" tone="secondary">
+                    {it.count}번 · 평균 {it.avgMood.toFixed(1)}{' '}
+                    <AppText variant="bodySmall" tone={it.diff >= 0 ? 'tint' : 'danger'} style={styles.diff}>
+                      {it.diff >= 0 ? '+' : ''}
+                      {it.diff.toFixed(1)}
+                    </AppText>
+                  </AppText>
+                </View>
+              ))}
+            </>
+          )}
+        </Card>
+
         <AppText variant="caption" tone="secondary" style={styles.version}>
           하루 일기 v{Constants.expoConfig?.version ?? '1.0.0'} · 모든 일기는 이 기기에만 저장됩니다.
         </AppText>
@@ -107,5 +165,9 @@ const useStyles = makeStyles((theme) => ({
   barTrack: { flex: 1, height: 10, borderRadius: 5, overflow: 'hidden', backgroundColor: theme.border },
   barFill: { height: '100%', borderRadius: 5 },
   statCount: { width: 28, textAlign: 'right' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  impactNote: { fontWeight: '400' },
+  impactRow: { paddingVertical: 2 },
+  diff: { fontWeight: '700' },
   version: { textAlign: 'center', marginTop: Spacing.xl, fontWeight: '400' },
 }));

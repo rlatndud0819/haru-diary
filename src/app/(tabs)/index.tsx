@@ -68,7 +68,7 @@ export default function DiaryListScreen() {
         <TextField
           value={keyword}
           onChangeText={setKeyword}
-          placeholder="제목이나 내용으로 검색"
+          placeholder="제목, 내용, 태그로 검색"
           clearButtonMode="while-editing"
           returnKeyType="search"
         />

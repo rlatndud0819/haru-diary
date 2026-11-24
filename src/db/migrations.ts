@@ -9,7 +9,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
  * 나중에 컬럼을 추가하려면 DATABASE_VERSION을 올리고 `if (version === N) { ... }` 블록을 추가하면 된다.
  * (Spring 쪽의 Flyway V1__init.sql, V2__... 와 같은 개념. 이미 배포된 블록은 절대 고치지 않는다.)
  */
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -70,6 +70,48 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       `);
     });
     version = 2;
+  }
+
+  if (version === 2) {
+    // v3: 감정 단어 + 이유 태그
+    // - entry_emotions: 일기 1건에 감정 단어 N개. 단어 목록은 코드(constants/emotions.ts)에 고정, 여기엔 id만 저장
+    // - tags        : 사용자가 늘리고 지울 수 있는 이유 태그 (기본 태그를 미리 넣어 둔다)
+    // - entry_tags  : 일기와 태그의 다대다(N:M) 연결 테이블 (JPA @ManyToMany 의 조인 테이블과 같다)
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS entry_emotions (
+          entry_id  INTEGER NOT NULL REFERENCES entries (id),
+          emotion   TEXT    NOT NULL,
+          PRIMARY KEY (entry_id, emotion)
+        );
+        CREATE INDEX IF NOT EXISTS idx_entry_emotions_emotion ON entry_emotions (emotion);
+
+        CREATE TABLE IF NOT EXISTS tags (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          name        TEXT    NOT NULL UNIQUE,
+          sort_order  INTEGER NOT NULL DEFAULT 0,
+          created_at  TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS entry_tags (
+          entry_id  INTEGER NOT NULL REFERENCES entries (id),
+          tag_id    INTEGER NOT NULL REFERENCES tags (id),
+          PRIMARY KEY (entry_id, tag_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags (tag_id);
+      `);
+      const defaults = ['일', '공부', '가족', '친구', '연인', '운동', '건강', '수면', '음식', '날씨', '취미', '휴식', '여행', '돈'];
+      const now = new Date().toISOString();
+      for (let i = 0; i < defaults.length; i++) {
+        await db.runAsync(
+          'INSERT OR IGNORE INTO tags (name, sort_order, created_at) VALUES (?, ?, ?)',
+          defaults[i],
+          i,
+          now
+        );
+      }
+    });
+    version = 3;
   }
 
   // PRAGMA 문은 파라미터 바인딩(?)을 쓸 수 없어서 상수 값을 직접 넣는다.

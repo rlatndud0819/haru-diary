@@ -6,9 +6,12 @@ React Native(Expo) + TypeScript로 만든 무료 다이어리 앱입니다.
 ## 기능
 
 - 일기 작성·수정·삭제 (날짜, 기분 5단계, 제목, 내용, **사진 최대 10장**)
+- **감정 단어(16개 중 최대 5개)와 이유 태그(일·운동·가족 … 직접 추가·삭제 가능)**
+  - 설정에서 자주 느낀 감정, 태그별 기분 영향(예: #운동 있는 날 평균 +1.3) 확인
+  - 주간·월간 회고 상세에 그 기간 감정·태그 요약
 - **일기 종류 3가지: 하루 일기 / 주간 회고 / 월간 회고**
   - 주간·월간 회고 상세 화면에는 그 기간에 쓴 하루 일기가 함께 모여 보인다
-- 일기 목록 + 제목/내용 검색 + 종류 필터(전체/하루/주간/월간)
+- 일기 목록 + 제목/내용/태그 검색 + 종류 필터(전체/하루/주간/월간)
 - 월간 캘린더 (날짜별 기분 이모지 표시, 날짜 눌러서 그날 일기·그 주/그 달 회고 보기·쓰기)
 - **카메라**: 앞/뒤 전환, 플래시, 3×3 격자, 셀프 타이머(3·10초), 줌, 셀카 좌우 반전
 - **사진 필터 편집** (카메라로 찍은 사진·앨범 사진 모두)
@@ -74,7 +77,8 @@ src/
 │
 ├── db/                       # 데이터 계층 — SQL은 전부 여기에만
 │   ├── migrations.ts         # 테이블 생성·스키마 버전 관리
-│   ├── diary-repository.ts   # 일기 CRUD, 검색, 통계
+│   ├── diary-repository.ts   # 일기 CRUD, 검색, 통계(기분·감정·태그 영향)
+│   ├── tag-repository.ts     # 이유 태그 목록·추가·삭제
 │   └── settings-repository.ts# 설정 key-value 저장
 │
 ├── services/                 # 기기 기능 래퍼
@@ -95,11 +99,16 @@ src/
 │   │   ├── photo.tsx         #   사진 (full / tile / thumb)
 │   │   ├── segmented-control.tsx # [하루|주간|월간] 같은 선택 탭 (제네릭)
 │   │   ├── slider.tsx        #   가로 슬라이더 (필터 강도·조정·줌)
+│   │   ├── chip.tsx          #   알약 모양 꼬리표 (감정·태그)
 │   │   └── state-view.tsx    #   LoadingView, MessageView
 │   ├── lock-gate.tsx         # 앱 잠금 화면 / 백그라운드 복귀 시 재잠금
 │   ├── screen.tsx            # 탭 화면 공통 틀 (SafeArea + 큰 제목)
 │   ├── diary-card.tsx        # 목록의 일기 카드
 │   ├── mood-picker.tsx       # 기분 5단계 선택
+│   ├── emotion-picker.tsx    # 감정 단어 고르기 (좋은 감정 / 힘든 감정)
+│   ├── tag-picker.tsx        # 이유 태그 고르기·추가·삭제
+│   ├── emotion-tag-list.tsx  # 감정·태그 칩 보여주기 (상세·카드)
+│   ├── period-summary.tsx    # 주간·월간 회고 요약 카드
 │   ├── photo-list-editor.tsx # 작성 화면의 사진 칸 (가로 목록 + 앨범/카메라 버튼)
 │   ├── filtered-photo.tsx    # Skia로 필터 적용한 사진 그리기 (미리보기·저장 공용)
 │   └── calendar-grid.tsx     # 월간 달력 그리드
@@ -110,16 +119,17 @@ src/
 │   └── color.ts              # withAlpha(색, 투명도)
 │
 ├── types/diary.ts            # DiaryEntry 등 타입 정의
-├── constants/                # 디자인 토큰(theme.ts), 기분(moods.ts), 일기 종류 문구(periods.ts), 필터 정의(filters.ts)
+├── constants/                # 디자인 토큰(theme.ts), 기분(moods.ts), 감정 단어(emotions.ts), 일기 종류(periods.ts), 필터(filters.ts)
 ├── hooks/                    # useTheme, useColorScheme
 └── utils/
     ├── date.ts               # 'YYYY-MM-DD' 날짜 유틸 + 기간(주·월) 계산
+    ├── summary.ts            # 감정·태그 횟수 세기, 평균 기분
     └── color-matrix.ts       # 필터의 정체: 색 변환 행렬 계산 (밝기·대비·채도·세피아 ...)
 ```
 
 ## DB 스키마
 
-현재 스키마 버전: **2** (`PRAGMA user_version`)
+현재 스키마 버전: **3** (`PRAGMA user_version`)
 
 ```sql
 CREATE TABLE entries (
@@ -144,6 +154,28 @@ CREATE TABLE entry_photos (
   sort_order  INTEGER NOT NULL DEFAULT 0   -- 0번이 대표 사진(목록 썸네일)
 );
 CREATE INDEX idx_entry_photos_entry ON entry_photos (entry_id, sort_order);
+
+-- v3: 감정 단어 (단어 목록은 constants/emotions.ts, DB에는 id만)
+CREATE TABLE entry_emotions (
+  entry_id  INTEGER NOT NULL REFERENCES entries (id),
+  emotion   TEXT    NOT NULL,      -- 예: 'proud', 'tired'
+  PRIMARY KEY (entry_id, emotion)
+);
+
+-- v3: 이유 태그 (기본 14개를 넣어 두고, 사용자가 추가·삭제)
+CREATE TABLE tags (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT    NOT NULL UNIQUE,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT    NOT NULL
+);
+
+-- v3: 일기 ↔ 태그 (N:M 조인 테이블)
+CREATE TABLE entry_tags (
+  entry_id  INTEGER NOT NULL REFERENCES entries (id),
+  tag_id    INTEGER NOT NULL REFERENCES tags (id),
+  PRIMARY KEY (entry_id, tag_id)
+);
 
 CREATE TABLE settings (
   key   TEXT PRIMARY KEY NOT NULL,   -- 예: 'lock_enabled'
@@ -200,6 +232,9 @@ function Example() {
 | `db.withTransactionAsync(...)` | `@Transactional` (일기 + 사진 저장을 한 트랜잭션으로) |
 | `listEntries`의 조건 조립 | MyBatis 동적 SQL `<where><if>` |
 | `services/photo-inbox.ts` | 팝업 창 → 부모 창으로 값 돌려주기 (작은 메모리 큐) |
+| `entry_tags` 테이블 | JPA `@ManyToMany` 의 조인 테이블 |
+| `constants/emotions.ts` 의 감정 id | Java `enum` (DB에는 코드값만 저장) |
+| `attachRelations()` | JPA fetch join / `@BatchSize` 로 N+1 피하기 |
 
 ## 코드 분석 추천 순서
 

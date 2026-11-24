@@ -17,6 +17,12 @@ export type DiaryPeriod = 'day' | 'week' | 'month';
 /** 한 일기에 붙일 수 있는 최대 사진 수 */
 export const MAX_PHOTOS = 10;
 
+/** 한 일기에 고를 수 있는 최대 감정 단어 수 */
+export const MAX_EMOTIONS = 5;
+
+/** 이유 태그 (사용자가 추가·삭제 가능) */
+export type Tag = { id: number; name: string };
+
 /** 저장된 일기 한 건 */
 export type DiaryEntry = {
   id: number;
@@ -28,6 +34,10 @@ export type DiaryEntry = {
   content: string;
   /** 앱 내부 저장소에 복사된 사진 경로들 (순서대로). 사진이 없으면 빈 배열 */
   photoUris: string[];
+  /** 고른 감정 단어 id 목록 (constants/emotions.ts 의 id) */
+  emotions: string[];
+  /** 붙인 이유 태그 */
+  tags: Tag[];
   /** 생성·수정 시각 (ISO 문자열) */
   createdAt: string;
   updatedAt: string;
@@ -41,4 +51,6 @@ export type DiaryInput = {
   title: string;
   content: string;
   photoUris: string[];
+  emotions: string[];
+  tagIds: number[];
 };

@@ -4,6 +4,8 @@ import { useCallback, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { DiaryCard } from '@/components/diary-card';
+import { EmotionTagList } from '@/components/emotion-tag-list';
+import { PeriodSummary } from '@/components/period-summary';
 import { AppText } from '@/components/ui/app-text';
 import { Button } from '@/components/ui/button';
 import { Photo } from '@/components/ui/photo';
@@ -89,6 +91,8 @@ export default function EntryDetailScreen() {
           </AppText>
         </View>
 
+        <EmotionTagList emotions={entry.emotions} tags={entry.tags} />
+
         <AppText variant="title">{entry.title || '제목 없음'}</AppText>
 
         {entry.photoUris.map((uri) => (
@@ -101,6 +105,7 @@ export default function EntryDetailScreen() {
 
         {entry.period !== 'day' ? (
           <View style={styles.dailyList}>
+            <PeriodSummary entries={dailyEntries} />
             <SectionLabel>{`이 기간의 하루 일기 (${dailyEntries.length})`}</SectionLabel>
             {dailyEntries.length === 0 ? (
               <AppText variant="bodySmall" tone="secondary">

@@ -3,8 +3,10 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
 
+import { EmotionPicker } from '@/components/emotion-picker';
 import { MoodPicker } from '@/components/mood-picker';
 import { PhotoListEditor } from '@/components/photo-list-editor';
+import { TagPicker } from '@/components/tag-picker';
 import { ArrowNav } from '@/components/ui/arrow-nav';
 import { Button } from '@/components/ui/button';
 import { HeaderTextButton } from '@/components/ui/header-text-button';
@@ -16,10 +18,11 @@ import { DEFAULT_MOOD } from '@/constants/moods';
 import { getPeriod, PERIODS } from '@/constants/periods';
 import { Spacing } from '@/constants/theme';
 import { createEntry, getEntryById, updateEntry } from '@/db/diary-repository';
+import { createTag, deleteTag, listTags } from '@/db/tag-repository';
 import { takePendingPhotos } from '@/services/photo-inbox';
 import { deletePhoto, isStoredPhoto, pickPhotos, savePhotoToAppStorage } from '@/services/photo-storage';
 import { CommonStyles } from '@/styles/common';
-import { type DiaryPeriod, MAX_PHOTOS, type MoodLevel } from '@/types/diary';
+import { type DiaryPeriod, MAX_PHOTOS, type MoodLevel, type Tag } from '@/types/diary';
 import { formatPeriod, periodStart, shiftPeriod, todayKey } from '@/utils/date';
 
 const PERIOD_OPTIONS = PERIODS.map((p) => ({ value: p.period, label: p.label }));
@@ -51,12 +54,17 @@ export default function WriteScreen() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [photoUris, setPhotoUris] = useState<string[]>([]);
+  const [emotions, setEmotions] = useState<string[]>([]);
+  const [tagIds, setTagIds] = useState<number[]>([]);
+  /** 고를 수 있는 전체 태그 목록 */
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   /** 수정 시작 시점의 사진들. 저장할 때 빠진 사진 파일을 지우기 위해 기억해 둔다. */
   const [originalPhotoUris, setOriginalPhotoUris] = useState<string[]>([]);
 
   // 수정 모드면 기존 일기를 불러와 입력칸을 채운다.
   useEffect(() => {
     takePendingPhotos(); // 이전에 남아 있던 결과가 섞이지 않도록 비우고 시작
+    listTags(db).then(setAllTags);
     if (editId === null) return;
     getEntryById(db, editId).then((entry) => {
       if (entry) {
@@ -67,6 +75,8 @@ export default function WriteScreen() {
         setContent(entry.content);
         setPhotoUris(entry.photoUris);
         setOriginalPhotoUris(entry.photoUris);
+        setEmotions(entry.emotions);
+        setTagIds(entry.tags.map((t) => t.id));
       }
       setLoading(false);
     });
@@ -106,6 +116,18 @@ export default function WriteScreen() {
     setPhotoUris((prev) => prev.filter((_, i) => i !== index));
   }
 
+  async function handleCreateTag(name: string): Promise<Tag | null> {
+    const tag = await createTag(db, name);
+    if (tag) setAllTags(await listTags(db));
+    return tag;
+  }
+
+  async function handleDeleteTag(tag: Tag) {
+    await deleteTag(db, tag.id);
+    setTagIds((prev) => prev.filter((id) => id !== tag.id));
+    setAllTags(await listTags(db));
+  }
+
   async function handleSave() {
     if (!title.trim() && !content.trim()) {
       Alert.alert('내용을 입력해 주세요', '제목이나 내용 중 하나는 있어야 저장할 수 있어요.');
@@ -127,7 +149,17 @@ export default function WriteScreen() {
         }
       }
 
-      const input = { period, entryDate, mood, title: title.trim(), content: content.trim(), photoUris: finalUris };
+      const input = {
+        period,
+        entryDate,
+        mood,
+        title: title.trim(),
+        content: content.trim(),
+        photoUris: finalUris,
+        emotions,
+        // 저장 직전에 지워진 태그가 섞이지 않도록 현재 목록에 있는 것만
+        tagIds: tagIds.filter((id) => allTags.some((t) => t.id === id)),
+      };
 
       if (isEdit) {
         await updateEntry(db, editId, input);
@@ -181,6 +213,18 @@ export default function WriteScreen() {
 
           <SectionLabel>{info.moodLabel}</SectionLabel>
           <MoodPicker value={mood} onChange={setMood} />
+
+          <SectionLabel>어떤 감정이었나요?</SectionLabel>
+          <EmotionPicker value={emotions} onChange={setEmotions} />
+
+          <SectionLabel>무엇 때문이었나요?</SectionLabel>
+          <TagPicker
+            tags={allTags}
+            value={tagIds}
+            onChange={setTagIds}
+            onCreate={handleCreateTag}
+            onDelete={handleDeleteTag}
+          />
 
           <SectionLabel>제목</SectionLabel>
           <TextField value={title} onChangeText={setTitle} placeholder={info.titlePlaceholder} maxLength={60} />
