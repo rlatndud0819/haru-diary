@@ -3,12 +3,14 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { CalendarGrid } from '@/components/calendar-grid';
+import { CALENDAR_MOOD_ALPHA, CalendarGrid } from '@/components/calendar-grid';
 import { DiaryCard } from '@/components/diary-card';
+import { MoodLegend } from '@/components/mood-legend';
 import { Screen } from '@/components/screen';
 import { AppText } from '@/components/ui/app-text';
 import { ArrowNav } from '@/components/ui/arrow-nav';
 import { Button } from '@/components/ui/button';
+import { HeaderTextButton } from '@/components/ui/header-text-button';
 import { SectionLabel } from '@/components/ui/section-label';
 import { Spacing } from '@/constants/theme';
 import { getEntriesBetween, getEntriesForPeriod } from '@/db/diary-repository';
@@ -21,7 +23,8 @@ import { formatKoreanDate, periodStart, toDateKey, todayKey } from '@/utils/date
  * - 보고 있는 달(year, month)의 일기만 DB에서 조회한다.
  * - 날짜를 누르면 그날 일기 목록을 아래에 보여주고, 없으면 "이 날 일기 쓰기" 버튼을 보여준다.
  * - 그 아래에 고른 날짜가 속한 주·달의 회고(주간/월간 일기)를 보여준다.
- * - 달력의 기분 표시는 하루 일기 기준이다.
+ * - 달력의 기분 표시는 하루 일기 기준이다. 칸 배경을 기분 색으로 칠한다.
+ * - 오른쪽 위 "연간 보기"로 1년치 기분을 한 화면에 본다. (year.tsx)
  */
 export default function CalendarScreen() {
   const db = useSQLiteContext();
@@ -78,7 +81,14 @@ export default function CalendarScreen() {
   }
 
   return (
-    <Screen title="캘린더">
+    <Screen
+      title="캘린더"
+      right={
+        <HeaderTextButton
+          label="연간 보기"
+          onPress={() => router.push({ pathname: '/year', params: { year: String(year) } })}
+        />
+      }>
       <ScrollView contentContainerStyle={CommonStyles.tabScrollContent}>
         <ArrowNav
           label={`${year}년 ${month + 1}월`}
@@ -95,6 +105,7 @@ export default function CalendarScreen() {
           selectedKey={selectedKey}
           onSelect={setSelectedKey}
         />
+        <MoodLegend alpha={CALENDAR_MOOD_ALPHA} />
 
         <AppText variant="subtitle" style={styles.dayTitle}>
           {formatKoreanDate(selectedKey)}

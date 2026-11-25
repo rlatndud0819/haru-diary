@@ -148,6 +148,26 @@ export async function getEntriesBetween(
   return attachRelations(db, rows);
 }
 
+/** 날짜별 기분 한 칸 (연간 보기용) */
+export type DailyMood = { entryDate: string; mood: MoodLevel; entryId: number };
+
+/**
+ * 기간 안의 하루 일기 기분만 가볍게 조회한다. (사진·감정·태그는 붙이지 않는다)
+ * 같은 날 일기가 여러 개면 가장 나중에 쓴 일기를 쓴다. 캘린더와 같은 규칙이다.
+ */
+export async function getDailyMoods(db: SQLiteDatabase, startKey: string, endKey: string): Promise<DailyMood[]> {
+  const rows = await db.getAllAsync<{ id: number; entry_date: string; mood: number }>(
+    `SELECT id, entry_date, mood FROM entries
+     WHERE period = 'day' AND entry_date BETWEEN ? AND ?
+     ORDER BY entry_date ASC, created_at ASC`,
+    startKey,
+    endKey
+  );
+  const byDate = new Map<string, DailyMood>();
+  for (const r of rows) byDate.set(r.entry_date, { entryDate: r.entry_date, mood: r.mood as MoodLevel, entryId: r.id });
+  return [...byDate.values()];
+}
+
 /** 해당 기간(주·월)의 회고 일기. startKey는 그 기간의 시작일 */
 export async function getEntriesForPeriod(
   db: SQLiteDatabase,

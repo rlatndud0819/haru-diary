@@ -36,6 +36,8 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             {/* 일기 상세 */}
             <Stack.Screen name="entry/[id]" options={{ title: '일기' }} />
+            {/* 연간 보기 (Year in Pixels) */}
+            <Stack.Screen name="year" options={{ title: '연간 보기' }} />
             {/* 작성·수정: 아래에서 올라오는 모달 */}
             <Stack.Screen name="write" options={{ presentation: 'modal', title: '일기 쓰기' }} />
             {/* 카메라·필터: 화면 전체를 덮는 모달 (헤더 없이 자체 상단 바 사용) */}
