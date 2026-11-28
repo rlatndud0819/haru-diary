@@ -20,6 +20,12 @@ function ensurePhotoDir(): void {
   }
 }
 
+/** 사진 보관 폴더 (백업·복원에서 사용). 없으면 만든다. */
+export function getPhotoDirectory(): Directory {
+  ensurePhotoDir();
+  return photoDir;
+}
+
 /** 앨범에서 사진 여러 장 선택 (최대 limit장). 취소하면 빈 배열 */
 export async function pickPhotos(limit: number): Promise<string[]> {
   if (limit <= 0) return [];

@@ -20,6 +20,7 @@ React Native(Expo) + TypeScript로 만든 무료 다이어리 앱입니다.
   - 밝기·대비·채도·색온도 조정, 비네팅, 필름 카메라 날짜 도장
   - 사진을 누르고 있으면 원본과 비교
 - 앱 잠금 (Face ID / 지문 / 기기 암호)
+- 백업·복원 (일기와 사진을 .harubak 파일 하나로 만들어 iCloud Drive·파일 앱·카카오톡 등에 저장, 새 폰에서 되살리기. 계정 불필요)
 - 기분 통계
 - 라이트/다크 모드 자동 적용
 
@@ -81,10 +82,12 @@ src/
 │   ├── migrations.ts         # 테이블 생성·스키마 버전 관리
 │   ├── diary-repository.ts   # 일기 CRUD, 검색, 통계(기분·감정·태그 영향)
 │   ├── tag-repository.ts     # 이유 태그 목록·추가·삭제
+│   ├── backup-repository.ts  # 백업용 전체 데이터 읽기, 복원 시 한 트랜잭션으로 통째 교체
 │   └── settings-repository.ts# 설정 key-value 저장
 │
 ├── services/                 # 기기 기능 래퍼
 │   ├── photo-storage.ts      # 사진 여러 장 선택, 편집용 정리(회전·축소), 앱 폴더로 복사, 삭제
+│   ├── backup.ts             # 백업 파일(.harubak) 만들기·공유, 파일 고르기·검증·복원
 │   ├── photo-inbox.ts        # 카메라·필터 화면 → 작성 화면으로 사진을 넘겨주는 작은 큐
 │   ├── biometric.ts          # Face ID / 지문 인증
 │   └── lock-control.ts       # 사진 고르는 동안 재잠금 일시 중지

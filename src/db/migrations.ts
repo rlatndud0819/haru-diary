@@ -9,7 +9,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
  * 나중에 컬럼을 추가하려면 DATABASE_VERSION을 올리고 `if (version === N) { ... }` 블록을 추가하면 된다.
  * (Spring 쪽의 Flyway V1__init.sql, V2__... 와 같은 개념. 이미 배포된 블록은 절대 고치지 않는다.)
  */
-const DATABASE_VERSION = 3;
+export const DATABASE_VERSION = 3;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');

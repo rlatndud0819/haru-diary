@@ -7,6 +7,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const SettingKeys = {
   lockEnabled: 'lock_enabled',
+  /** 마지막으로 백업 파일을 만든 시각 (ISO 문자열) */
+  lastBackupAt: 'last_backup_at',
 } as const;
 
 export async function getSetting(db: SQLiteDatabase, key: string): Promise<string | null> {
@@ -26,6 +28,14 @@ export async function setSetting(db: SQLiteDatabase, key: string, value: string)
 
 export async function isLockEnabled(db: SQLiteDatabase): Promise<boolean> {
   return (await getSetting(db, SettingKeys.lockEnabled)) === 'true';
+}
+
+export async function getLastBackupAt(db: SQLiteDatabase): Promise<string | null> {
+  return getSetting(db, SettingKeys.lastBackupAt);
+}
+
+export async function setLastBackupAt(db: SQLiteDatabase, iso: string): Promise<void> {
+  await setSetting(db, SettingKeys.lastBackupAt, iso);
 }
 
 export async function setLockEnabled(db: SQLiteDatabase, enabled: boolean): Promise<void> {
